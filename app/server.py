@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 
 from app.store import load_case, names
 from app.comparison import preview
+from app.analysis import analyze
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -31,13 +32,25 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get('Content-Length', '0'))
             if not 0 < length <= 1048576:
                 raise ValueError('invalid body size')
-            request = json.loads(self.rfile.read(length))
-            case = load_case(request['case'])
-            if urlsplit(self.path).path != '/preview':
+            route = urlsplit(self.path).path
+            if route not in ('/preview', '/recommend'):
                 self.send_json(404, {'error': 'unknown route'})
                 return
-            self.send_json(200, preview(case))
-        except (ValueError, KeyError, TypeError) as error:
+            request = json.loads(self.rfile.read(length))
+            if not isinstance(request, dict):
+                raise ValueError('request must be an object')
+            case = load_case(request['case'])
+            if route == '/preview':
+                self.send_json(200, preview(case))
+                return
+            lane = request.get('lane')
+            if lane is not None and not isinstance(lane, str):
+                raise ValueError('lane must be a string')
+            answers = request.get('answers', [])
+            if not isinstance(answers, list):
+                raise ValueError('answers must be a list')
+            self.send_json(200, analyze(case, lane, answers))
+        except (ValueError, KeyError, TypeError, AttributeError) as error:
             self.send_json(400, {'error': str(error)})
 
 
